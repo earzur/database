@@ -25,6 +25,22 @@ class Chef
       class MysqlUser < Chef::Provider::Database::Mysql
         use_inline_resources if defined?(use_inline_resources)
 
+        ## mapping for multi-word privileges that won't work with the
+        ## latter "#{p.capitalize}_priv"
+        PRIV_MAP = {
+          "GRANT OPTION" => "Grant_priv",
+          "LOCK TABLES" => "Lock_tables_priv",
+          "CREATE TEMPORARY_TABLE" => "Create_tmp_table_priv",
+          "CREATE VIEW" => "Create_view_priv",
+          "SHOW VIEW" => "Show_view_priv",
+          "ALTER ROUTINE" => "Alter_routine_priv",
+          "CREATE ROUTINE" => "Create_routine_priv",
+          "CREATE USER" => 'Create_user_priv',
+          "REPLICATION CLIENT" => 'Repl_client_priv',
+          "REPLICATION SLAVE" => 'Repl_slave_priv',
+          "SHOW DATABASES" => "Show_db_priv"
+        }
+
         def whyrun_supported?
           true
         end
@@ -92,7 +108,7 @@ class Chef
             return true if (/(\A\*[0-9A-F]{40}\z)/i).match(new_resource.password)
           end
 
-          db_name = new_resource.database_name ? "`#{new_resource.database_name}`" : '*'
+          db_name = new_resource.database_name ? new_resource.database_name : '*'
           tbl_name = new_resource.table ? new_resource.table : '*'
 
           # Test
@@ -108,7 +124,7 @@ class Chef
             # These should all by 'Y'
             test_sql_results.each do |r|
               new_resource.privileges.each do |p|
-                key = "#{p.capitalize}_priv"
+                key = PRIV_MAP[p.upcase] || "#{p.capitalize}_priv"
                 incorrect_privs = true if r[key] != 'Y'
               end
             end
@@ -126,7 +142,6 @@ class Chef
                 repair_sql += " '#{new_resource.password}'"
                 repair_sql += ' REQUIRE SSL' if new_resource.require_ssl
                 repair_sql += ' WITH GRANT OPTION' if new_resource.grant_option
-
                 repair_client.query(repair_sql)
                 repair_client.query('FLUSH PRIVILEGES')
               ensure
